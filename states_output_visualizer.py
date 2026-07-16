@@ -4,7 +4,7 @@ import matplotlib.pyplot as plt
 from scipy.spatial.transform import Rotation
 
 # Read the CSV file
-df = pd.read_csv("states_over_time.csv")
+df = pd.read_csv("states_over_time_v2.csv")
 
 # Extract quaternions
 quaternions = df[["qx", "qy", "qz", "qw"]].values
