@@ -1,28 +1,39 @@
 import pandas as pd
 import numpy as np
 from scipy import constants
+import dill
+
+# ---
+
+input_file_name = "test_data/imu_test3.csv"
+columns_to_drop = [
+    "recording id",
+    "roll [deg]",
+    "pitch [deg]",
+    "yaw [deg]",
+    "quaternion x",
+    "quaternion y",
+    "quaternion z",
+    "quaternion w",
+]
+
+output_file_name = "states_over_time_v2.csv"
+save_to_csv = False
+
+with open("observer_functions_and_matrices.pkl", "rb") as f:
+    ekf_funcs = dill.load(f)
+
+# ---
 
 
 def main():
-    file_name = "imu_test3.csv"
-    columns_to_drop = [
-        "recording id",
-        "roll [deg]",
-        "pitch [deg]",
-        "yaw [deg]",
-        "quaternion x",
-        "quaternion y",
-        "quaternion z",
-        "quaternion w",
-    ]
 
     try:
-        imu_data = pd.read_csv(file_name, engine="python")
+        imu_data = pd.read_csv(input_file_name, engine="python")
         imu_data = imu_data.drop(columns_to_drop, axis=1, errors="ignore")
 
-        imu_filter = Filter(
-            sample_amount_for_calibration=500
-        )  # Initialize filter instance (500 rows is roughly 5 seconds of data, sampled at somewhere between 100 and 110Hz)
+        # Initialize filter instance (500 rows is roughly 5 seconds of data, sampled at somewhere between 100 and 110Hz)
+        ekf = Filter(sample_amount_for_calibration=500)
 
         previous_time = imu_data["timestamp [ns]"].iloc[0]
         print("\n---")
@@ -31,10 +42,10 @@ def main():
         for index, row in imu_data.iterrows():
             current_time = row["timestamp [ns]"]
 
-            gyro_sample = np.array(
+            gyro = np.array(
                 [row["gyro x [deg/s]"], row["gyro y [deg/s]"], row["gyro z [deg/s]"]]
             )
-            accel_sample = np.array(
+            accel = np.array(
                 [
                     row["acceleration x [g]"],
                     row["acceleration y [g]"],
@@ -42,22 +53,24 @@ def main():
                 ]
             )
 
-            output = imu_filter.process_new_sample(
-                gyro_sample, accel_sample, previous_time, current_time
-            )
+            ekf.process_step(gyro, accel, previous_time, current_time)
 
             previous_time = current_time
 
         # Save states to CSV
-        imu_filter.save_states_to_csv("states_over_time.csv")
-        print(f"\nStates saved to 'states_over_time.csv'.")
-        print(f"\nFinal state: {imu_filter.state_x}")
+        if save_to_csv:
+            ekf.save_states_to_csv(output_file_name)
+            print("---")
+            print(f"Saved state history to csv: {output_file_name}")
+
+        print("---\n")
 
     except FileNotFoundError:
-        print(f"Error: Could not find '{file_name}'.")
+        print(f"Error: Could not find '{input_file_name}'.")
 
 
 class Filter:
+
     def __init__(self, sample_amount_for_calibration=200):
         self.cal_total_samples = sample_amount_for_calibration
         self.is_calibrated = False
@@ -66,8 +79,9 @@ class Filter:
         self.states_history = []
 
     # one row of data at a time, like a real-time loop
-    def process_new_sample(self, gyro, accel, previous_time_ns, current_time_ns):
+    def process_step(self, gyro, accel, previous_time_ns, current_time_ns):
 
+        # calibration
         if not self.is_calibrated:
             self.accel_calibration_buffer.append(accel)
             if len(self.accel_calibration_buffer) >= self.cal_total_samples:
@@ -75,38 +89,61 @@ class Filter:
 
             return None
 
+        # setup variables and functions
         dt = (current_time_ns - previous_time_ns) / 1e9
+        u_g = gyro * (np.pi / 180.0)
+        u_a = accel * constants.g
 
-        self._update_velocity_and_position(dt, accel)
-        self._update_orientation(dt, gyro)
-        
+        f_q = ekf_funcs["f_q"]
+        f_a = ekf_funcs["f_a"]
+
+        # update orientation
+        x_q_new = f_q(
+            self.state_x[0],
+            self.state_x[1],
+            self.state_x[2],
+            self.state_x[3],
+            u_g[0],
+            u_g[1],
+            u_g[2],
+            dt,
+        ).flatten()
+        x_q_normalized = x_q_new / np.linalg.norm(x_q_new)
+        self.state_x[0:4] = x_q_normalized
+
+        # update position and velocity
+        accel_rotated = f_a(
+            self.state_x[0],
+            self.state_x[1],
+            self.state_x[2],
+            self.state_x[3],
+            u_a[0],
+            u_a[1],
+            u_a[2],
+            constants.g,
+        ).flatten()
+        v_current = self.state_x[4:7]
+        p_current = self.state_x[7:10]
+
+        v_new = v_current + (accel_rotated * dt)
+        p_new = p_current + (v_new * dt)
+
+        self.state_x[4:7] = v_new
+        self.state_x[7:10] = p_new
+        print(f"new implementation: {[v_new] + [p_new]}")
+
+        # if save_to_csv:
         self.states_history.append(self.state_x.copy())
-        # EKF for later
-        # return self.state_x
-        return "EKF running..."
 
-    def save_states_to_csv(self, filename):
-        if not self.states_history:
-            print("No states to save.")
-            return
-
-        # Convert states_history to a DataFrame
-        columns = [
-            "qw", "qx", "qy", "qz",  # Orientation quaternion
-            "vx", "vy", "vz",        # Velocities
-            "x", "y", "z"            # Positions
-        ]
-        df = pd.DataFrame(self.states_history, columns=columns)
-        df.to_csv(filename, index=False)
-
+        return
 
     def _finalize_calibration(self):
-        print("\n---")
+        print("---")
         print("Calibration completed:")
         accel_array = np.array(self.accel_calibration_buffer)
 
         avg_accel = np.mean(accel_array, axis=0)
-        print(f"\nAverage Accel Gravity Vector: {avg_accel}")
+        print(f"-> Average Accel Gravity Vector: {avg_accel}")
 
         measured_gravity = avg_accel / np.linalg.norm(avg_accel)
         global_gravity = np.array([0.0, 0.0, 1.0])
@@ -136,60 +173,32 @@ class Filter:
                 0.0,  # Initial positions  (x, y, z)
             ]
         )
-        print(f"Orientation Quaternion: {self.state_x[0:4]}")
+        print(f"-> Orientation Quaternion: {self.state_x[0:4]}")
 
         # Free up memory by clearing buffers
         self.accel_calibration_buffer = []
         self.is_calibrated = True
 
-    def _update_velocity_and_position(self, dt, accel):
-        # unit conversion
-        accel_m_ss = np.array([accel[0], accel[1], accel[2]]) * constants.g
+    def save_states_to_csv(self, filename):
+        if not self.states_history:
+            print("No states to save.")
+            return
 
-        accel_global = np.array(self._rotate_vector(accel_m_ss, self.state_x[0:4]))
-        accel_global = accel_global - np.array([0.0, 0.0, constants.g])
-
-        v_current = self.state_x[4:7]
-        p_current = self.state_x[7:10]
-
-        v_new = v_current + (accel_global * dt)
-        p_new = p_current + (v_new * dt)
-
-        self.state_x[4:7] = v_new
-        self.state_x[7:10] = p_new
-
-        return
-
-    def _update_orientation(self, dt, gyro):
-        # unit conversion
-        gyro_rad_s = gyro * (np.pi / 180.0)
-        dqx, dqy, dqz = 0.5 * gyro_rad_s * dt
-
-        w_new, x_new, y_new, z_new = self._quaternion_mult(
-            self.state_x[0:4], [1.0, dqx, dqy, dqz]
-        )
-
-        mag = np.sqrt(w_new**2 + x_new**2 + y_new**2 + z_new**2)
-        self.state_x[0:4] = np.array([w_new, x_new, y_new, z_new]) / mag
-
-        return
-
-    def _rotate_vector(self, v, q):
-        v_quat = [0, v[0], v[1], v[2]]
-        q_conj = [q[0], -q[1], -q[2], -q[3]]
-
-        v_rotated = self._quaternion_mult(self._quaternion_mult(q, v_quat), q_conj)
-
-        return [v_rotated[1], v_rotated[2], v_rotated[3]]
-
-    @staticmethod
-    def _quaternion_mult(q, r):
-        w = q[0] * r[0] - q[1] * r[1] - q[2] * r[2] - q[3] * r[3]
-        x = q[0] * r[1] + q[1] * r[0] + q[2] * r[3] - q[3] * r[2]
-        y = q[0] * r[2] - q[1] * r[3] + q[2] * r[0] + q[3] * r[1]
-        z = q[0] * r[3] + q[1] * r[2] - q[2] * r[1] + q[3] * r[0]
-
-        return [w, x, y, z]
+        # Convert states_history to a DataFrame
+        columns = [
+            "qw",
+            "qx",
+            "qy",
+            "qz",  # Orientation quaternion
+            "vx",
+            "vy",
+            "vz",  # Velocities
+            "x",
+            "y",
+            "z",  # Positions
+        ]
+        df = pd.DataFrame(self.states_history, columns=columns)
+        df.to_csv(filename, index=False)
 
 
 if __name__ == "__main__":
