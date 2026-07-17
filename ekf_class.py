@@ -175,6 +175,7 @@ class Filter:
             self.x[0], self.x[1], self.x[2], self.x[3], constants.g
         ).flatten()
         self.x = self.x + kalman_gain @ (u_a - h)
+
         self.x[0:4] = self._normalize_quat(self.x[0:4])
 
         # P = (I - KH)P
@@ -205,9 +206,12 @@ class Filter:
             "x",
             "y",
             "z",  # Positions
+            "time",
         ]
         df = pd.DataFrame(self.states_history, columns=columns)
         df.to_csv(filename, index=False)
+
+        return
 
     @staticmethod
     def _normalize_quat(q):
