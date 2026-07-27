@@ -8,6 +8,7 @@ with open("observer_functions_and_matrices.pkl", "rb") as f:
 
 
 class Filter:
+
     def __init__(self, sample_amount_for_calibration=200):
         self.cal_total_samples = sample_amount_for_calibration
         self.is_calibrated = False
@@ -16,12 +17,10 @@ class Filter:
 
         self.x = None
         self.P = None
-
         self.Q = None
         self.R = None
 
         self.states_history = []
-        return
 
     def calibration_step(self, accel, u_g):
         self.accel_calibration_buffer.append(accel)
@@ -43,8 +42,8 @@ class Filter:
 
         # Free up memory by clearing buffers
         self.accel_calibration_buffer = []
+        self.gyro_calibration_buffer = []
         self.is_calibrated = True
-        return
 
     def _initialize_filter(self, avg_accel, avg_gyro):
         measured_gravity = avg_accel / np.linalg.norm(avg_accel)
@@ -53,24 +52,14 @@ class Filter:
         qw = 1.0 + np.dot(measured_gravity, global_gravity)
         qx, qy, qz = np.cross(measured_gravity, global_gravity)
 
-        q_norm = self._normalize_quat(np.array([qw, qx, qy, qz]))
+        q_initial = self._normalize_quat(np.array([qw, qx, qy, qz]))
 
         # Initialize state
         self.x = np.array(
             [
-                q_norm[0],
-                q_norm[1],
-                q_norm[2],
-                q_norm[3],  # Orientation quaternion
-                0.0,
-                0.0,
-                0.0,  # Initial velocities (vx, vy, vz)
-                0.0,
-                0.0,
-                0.0,  # Initial positions  (x, y, z)
-                avg_gyro[0],
-                avg_gyro[1],
-                avg_gyro[2],  # gyro bias
+                *q_initial,  # orientation
+                *np.zeros(6),  # velocity and position
+                *avg_gyro,  # gyro bias
             ]
         )
         print(f"-> Orientation Quaternion: {self.x[0:4]}")
@@ -108,52 +97,22 @@ class Filter:
         accelerometer_noise = 1e-2
         self.R = np.diag(np.repeat(accelerometer_noise, 3))
 
-        return
-
     def prediction_step(self, u_g, u_a, dt):
         f_q = ekf_funcs["f_q"](
-            self.x[0],
-            self.x[1],
-            self.x[2],
-            self.x[3],
-            self.x[10],
-            self.x[11],
-            self.x[12],
-            u_g[0],
-            u_g[1],
-            u_g[2],
+            *self.x[0:4],
+            *self.x[10:13],
+            *u_g,
             dt,
         ).flatten()
         f_a = ekf_funcs["f_a"](
-            self.x[0],
-            self.x[1],
-            self.x[2],
-            self.x[3],
-            u_a[0],
-            u_a[1],
-            u_a[2],
+            *self.x[0:4],
+            *u_a,
             constants.g,
         ).flatten()
         A = ekf_funcs["A"](
-            self.x[0],
-            self.x[1],
-            self.x[2],
-            self.x[3],
-            self.x[4],
-            self.x[5],
-            self.x[6],
-            self.x[7],
-            self.x[8],
-            self.x[9],
-            self.x[10],
-            self.x[11],
-            self.x[12],
-            u_a[0],
-            u_a[1],
-            u_a[2],
-            u_g[0],
-            u_g[1],
-            u_g[2],
+            *self.x[0:13],
+            *u_a,
+            *u_g,
             dt,
             constants.g,
         )
@@ -175,10 +134,9 @@ class Filter:
         # P = APA.T + WQW.T
 
         self.P = A @ self.P @ A.T + self.Q
-        return
 
     def correction_step(self, u_g, u_a):
-        H = ekf_funcs["H"](self.x[0], self.x[1], self.x[2], self.x[3], constants.g)
+        H = ekf_funcs["H"](*self.x[0:4], constants.g)
 
         # K = PH(HPH.T + VRV.T)^(-1)
         # change R if the IMU is static
@@ -201,33 +159,33 @@ class Filter:
 
         # P = (I - KH)P
         self.P = (np.eye(13) - kalman_gain @ H) @ self.P
-        return
 
     def save_states_to_csv(self, filename):
         if not self.states_history:
             print("No states to save.")
             return
 
-        # Convert states_history to a DataFrame
         columns = [
             "qw",
             "qx",
             "qy",
-            "qz",  # Orientation quaternion
+            "qz",
             "vx",
             "vy",
-            "vz",  # Velocities
+            "vz",
             "x",
             "y",
-            "z",  # Positions
+            "z",
             "b_x",
             "b_y",
-            "b_z",  # Bias
+            "b_z",
             "time",
         ]
         df = pd.DataFrame(self.states_history, columns=columns)
         df.to_csv(filename, index=False)
 
+        print("---")
+        print(f"Saved state history to csv: {filename}")
         return
 
     @staticmethod

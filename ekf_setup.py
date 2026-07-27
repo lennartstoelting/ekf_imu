@@ -1,10 +1,9 @@
 import pandas as pd
 import numpy as np
-import matplotlib.pyplot as plt
-from scipy.spatial.transform import Rotation
 from scipy import constants
 
 from ekf_class import Filter
+from ekf_plot import *
 
 # input_file_name = "test_data/imu_test3.csv"
 input_file_name = "static_test.csv"
@@ -31,15 +30,18 @@ def main():
         imu_data = pd.read_csv(input_file_name, engine="python")
         imu_data = imu_data.drop(columns_to_drop, axis=1, errors="ignore")
 
-        # Initialize filter instance (500 rows is roughly 5 seconds of data, sampled at somewhere between 100 and 110Hz)
-        ekf = Filter(sample_amount_for_calibration=500)
-
         start_time = imu_data["timestamp [ns]"].iloc[0]
         previous_time = start_time
         print("\n---")
         print("Starting real-time simulation...")
 
+        # Initialize filter class instance
+        # at ca. 100 Hz, 500 rows corresponds to 5 seconds of calibration
+        ekf = Filter(sample_amount_for_calibration=500)
+
         for index, row in imu_data.iterrows():
+
+            # prepare inputs
             current_time = row["timestamp [ns]"]
             dt = (current_time - previous_time) / 1e9
             elapsed_time = (current_time - start_time) / 1e9
@@ -56,62 +58,32 @@ def main():
             )
             u_g = gyro * (np.pi / 180.0)
             u_a = accel * constants.g
+            # ---
 
+            # run each sample
             if not ekf.is_calibrated:
                 ekf.calibration_step(accel, u_g)
                 previous_time = current_time
                 continue
-
             ekf.prediction_step(u_g, u_a, dt)
             ekf.correction_step(u_g, u_a)
+            # ---
 
-            if save_states_to_csv:
-                ekf.states_history.append(np.append(ekf.x.copy(), elapsed_time))
-
+            # end of cycle
+            ekf.states_history.append(np.append(ekf.x.copy(), elapsed_time))
             previous_time = current_time
+            # ---
 
         # Save states to CSV
         if save_states_to_csv:
             ekf.save_states_to_csv(output_file_name)
-            print("---")
-            print(f"Saved state history to csv: {output_file_name}")
-
-        if save_states_to_csv and plot_states:
-            _plot_states()
+            if plot_states:
+                pyplot_states(output_file_name, output_plot_name)
 
         print("---\n")
 
     except FileNotFoundError:
         print(f"Error: Could not find '{input_file_name}'.")
-
-
-def _plot_states():
-    df = pd.read_csv(output_file_name)
-
-    quaternions = df[["qx", "qy", "qz", "qw"]].values
-
-    rotations = Rotation.from_quat(quaternions)
-    euler_angles = rotations.as_euler("xyz", degrees=True)  # yaw, pitch, roll
-    df["roll"] = euler_angles[:, 1]
-    df["pitch"] = euler_angles[:, 0]
-    df["yaw"] = euler_angles[:, 2]
-
-    time = df["time"].values
-
-    print("---")
-    print(f"Plotting converted pitch, yaw and roll from {output_file_name}")
-
-    plt.figure(figsize=(10, 6))
-    plt.plot(time, df["roll"], label="Roll", color="blue")
-    plt.plot(time, df["pitch"], label="Pitch", color="orange")
-    plt.plot(time, df["yaw"], label="Yaw", color="green")
-    plt.xlabel("Time (s)")
-    plt.ylabel("Angle (degrees)")
-    plt.title("Yaw, Pitch, Roll")
-    plt.legend()
-    plt.grid(True)
-    # plt.savefig(output_plot_name)
-    plt.show()
 
 
 if __name__ == "__main__":
