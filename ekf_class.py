@@ -12,6 +12,7 @@ class Filter:
         self.cal_total_samples = sample_amount_for_calibration
         self.is_calibrated = False
         self.accel_calibration_buffer = []
+        self.gyro_calibration_buffer = []
 
         self.x = None
         self.P = None
@@ -20,9 +21,11 @@ class Filter:
         self.R = None
 
         self.states_history = []
+        return
 
-    def calibration_step(self, accel):
+    def calibration_step(self, accel, u_g):
         self.accel_calibration_buffer.append(accel)
+        self.gyro_calibration_buffer.append(u_g)
 
         if len(self.accel_calibration_buffer) < self.cal_total_samples:
             return
@@ -30,18 +33,20 @@ class Filter:
         print("---")
         print("Calibration completed:")
         accel_array = np.array(self.accel_calibration_buffer)
-
         avg_accel = np.mean(accel_array, axis=0)
         print(f"-> Average Accel Gravity Vector: {avg_accel}")
 
-        self._initialize_filter(avg_accel)
+        gyro_array = np.array(self.gyro_calibration_buffer)
+        avg_gyro = np.mean(gyro_array, axis=0)
+
+        self._initialize_filter(avg_accel, avg_gyro)
 
         # Free up memory by clearing buffers
         self.accel_calibration_buffer = []
         self.is_calibrated = True
         return
 
-    def _initialize_filter(self, avg_accel):
+    def _initialize_filter(self, avg_accel, avg_gyro):
         measured_gravity = avg_accel / np.linalg.norm(avg_accel)
         global_gravity = np.array([0.0, 0.0, 1.0])
 
@@ -63,6 +68,9 @@ class Filter:
                 0.0,
                 0.0,
                 0.0,  # Initial positions  (x, y, z)
+                avg_gyro[0],
+                avg_gyro[1],
+                avg_gyro[2],  # gyro bias
             ]
         )
         print(f"-> Orientation Quaternion: {self.x[0:4]}")
@@ -71,8 +79,13 @@ class Filter:
         # decent certainty for the orientation at the start, high certainty (even smaller number) for the velocity and position
         orientation_certainty = 0.1
         vel_pos_certainty = 1e-6  # Almost fully confident in the velocity and position since I define them at the start as ground truth
+        gyro_bias_certainty = 1e-3
         state_certainty = np.concatenate(
-            (np.repeat(orientation_certainty, 4), np.repeat(vel_pos_certainty, 6))
+            (
+                np.repeat(orientation_certainty, 4),
+                np.repeat(vel_pos_certainty, 6),
+                np.repeat(gyro_bias_certainty, 3),
+            )
         )
         self.P = np.diag(state_certainty)
 
@@ -80,11 +93,13 @@ class Filter:
         orientation_noise = 1e-8
         velocity_noise = 1e-4
         position_noise = 1e-5
+        gyro_bias_noise = 1e-10
         process_noise = np.concatenate(
             (
                 np.repeat(orientation_noise, 4),
                 np.repeat(velocity_noise, 3),
                 np.repeat(position_noise, 3),
+                np.repeat(gyro_bias_noise, 3),
             )
         )
         self.Q = np.diag(process_noise)
@@ -101,6 +116,9 @@ class Filter:
             self.x[1],
             self.x[2],
             self.x[3],
+            self.x[10],
+            self.x[11],
+            self.x[12],
             u_g[0],
             u_g[1],
             u_g[2],
@@ -127,6 +145,9 @@ class Filter:
             self.x[7],
             self.x[8],
             self.x[9],
+            self.x[10],
+            self.x[11],
+            self.x[12],
             u_a[0],
             u_a[1],
             u_a[2],
@@ -179,7 +200,7 @@ class Filter:
         self.x[0:4] = self._normalize_quat(self.x[0:4])
 
         # P = (I - KH)P
-        self.P = (np.eye(10) - kalman_gain @ H) @ self.P
+        self.P = (np.eye(13) - kalman_gain @ H) @ self.P
         return
 
     def save_states_to_csv(self, filename):
@@ -199,6 +220,9 @@ class Filter:
             "x",
             "y",
             "z",  # Positions
+            "b_x",
+            "b_y",
+            "b_z",  # Bias
             "time",
         ]
         df = pd.DataFrame(self.states_history, columns=columns)

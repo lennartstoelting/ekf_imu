@@ -5,6 +5,9 @@ input_file_name = "test_data/imu_test3.csv"
 
 output_file_name = "static_test.csv"
 
+static_window_length_in_s = 9
+repetitions = 3
+
 
 def main():
 
@@ -12,14 +15,14 @@ def main():
         imu_data = pd.read_csv(input_file_name, engine="python")
 
         start_time = int(imu_data["timestamp [ns]"].iloc[0])
-        end_time = start_time + 9_000_000_000
+        end_time = start_time + 1_000_000_000 * static_window_length_in_s
 
         static_beginning = imu_data[imu_data["timestamp [ns]"] <= end_time].copy()
 
         timestamps = static_beginning["timestamp [ns]"].values
         dt_ns = int(np.mean(np.diff(timestamps)))
 
-        extended_df = pd.concat([static_beginning] * 6, ignore_index=True)
+        extended_df = pd.concat([static_beginning] * repetitions, ignore_index=True)
 
         # Generate a perfectly continuous, monotonically increasing timestamp array
         n_rows = len(extended_df)

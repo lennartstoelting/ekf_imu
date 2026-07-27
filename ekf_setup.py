@@ -41,6 +41,8 @@ def main():
 
         for index, row in imu_data.iterrows():
             current_time = row["timestamp [ns]"]
+            dt = (current_time - previous_time) / 1e9
+            elapsed_time = (current_time - start_time) / 1e9
 
             gyro = np.array(
                 [row["gyro x [deg/s]"], row["gyro y [deg/s]"], row["gyro z [deg/s]"]]
@@ -52,18 +54,13 @@ def main():
                     row["acceleration z [g]"],
                 ]
             )
-
-            if not ekf.is_calibrated:
-                ekf.calibration_step(accel)
-                previous_time = current_time
-                continue
-
-            # setup variables and functions
-            dt = (current_time - previous_time) / 1e9
-            elapsed_time = (current_time - start_time) / 1e9
-
             u_g = gyro * (np.pi / 180.0)
             u_a = accel * constants.g
+
+            if not ekf.is_calibrated:
+                ekf.calibration_step(accel, u_g)
+                previous_time = current_time
+                continue
 
             ekf.prediction_step(u_g, u_a, dt)
             ekf.correction_step(u_g, u_a)
