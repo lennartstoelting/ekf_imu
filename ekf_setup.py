@@ -66,7 +66,7 @@ def main():
                 previous_time = current_time
                 continue
             ekf.prediction_step(u_g, u_a, dt)
-            ekf.correction_step(u_g, u_a)
+            # ekf.correction_step(u_g, u_a)
             # ---
 
             # end of cycle

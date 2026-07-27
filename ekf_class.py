@@ -10,7 +10,7 @@ with open("observer_functions_and_matrices.pkl", "rb") as f:
 class Filter:
 
     def __init__(self, sample_amount_for_calibration=200):
-        self.cal_total_samples = sample_amount_for_calibration
+        self.calibration_samples = sample_amount_for_calibration
         self.is_calibrated = False
         self.accel_calibration_buffer = []
         self.gyro_calibration_buffer = []
@@ -26,26 +26,28 @@ class Filter:
         self.accel_calibration_buffer.append(accel)
         self.gyro_calibration_buffer.append(u_g)
 
-        if len(self.accel_calibration_buffer) < self.cal_total_samples:
-            return
+        # last calibration step
+        if len(self.accel_calibration_buffer) >= self.calibration_samples:
+            self._initialize_filter()
 
-        print("---")
-        print("Calibration completed:")
-        accel_array = np.array(self.accel_calibration_buffer)
-        avg_accel = np.mean(accel_array, axis=0)
-        print(f"-> Average Accel Gravity Vector: {avg_accel}")
+    def _initialize_filter(self):
+        self._initialize_state_x()
+        self._initialize_state_covariance_matrix_P()
+        self._initialize_process_noise_covariance_matrix_Q()
+        self._initialize_measurement_noise_covariance_matrix_R()
 
-        gyro_array = np.array(self.gyro_calibration_buffer)
-        avg_gyro = np.mean(gyro_array, axis=0)
-
-        self._initialize_filter(avg_accel, avg_gyro)
-
-        # Free up memory by clearing buffers
+        # Free up memory
         self.accel_calibration_buffer = []
         self.gyro_calibration_buffer = []
         self.is_calibrated = True
 
-    def _initialize_filter(self, avg_accel, avg_gyro):
+    def _initialize_state_x(self):
+        accel_array = np.array(self.accel_calibration_buffer)
+        avg_accel = np.mean(accel_array, axis=0)
+
+        gyro_array = np.array(self.gyro_calibration_buffer)
+        avg_gyro = np.mean(gyro_array, axis=0)
+
         measured_gravity = avg_accel / np.linalg.norm(avg_accel)
         global_gravity = np.array([0.0, 0.0, 1.0])
 
@@ -54,7 +56,6 @@ class Filter:
 
         q_initial = self._normalize_quat(np.array([qw, qx, qy, qz]))
 
-        # Initialize state
         self.x = np.array(
             [
                 *q_initial,  # orientation
@@ -62,9 +63,8 @@ class Filter:
                 *avg_gyro,  # gyro bias
             ]
         )
-        print(f"-> Orientation Quaternion: {self.x[0:4]}")
 
-        # Initialize state covariance matrix
+    def _initialize_state_covariance_matrix_P(self):
         # decent certainty for the orientation at the start, high certainty (even smaller number) for the velocity and position
         orientation_certainty = 0.1
         vel_pos_certainty = 1e-6  # Almost fully confident in the velocity and position since I define them at the start as ground truth
@@ -78,7 +78,7 @@ class Filter:
         )
         self.P = np.diag(state_certainty)
 
-        # Initialize process noise covariance matrix
+    def _initialize_process_noise_covariance_matrix_Q(self):
         orientation_noise = 1e-8
         velocity_noise = 1e-4
         position_noise = 1e-5
@@ -93,7 +93,7 @@ class Filter:
         )
         self.Q = np.diag(process_noise)
 
-        # Initialize measurement noise covariance matrix
+    def _initialize_measurement_noise_covariance_matrix_R(self):
         accelerometer_noise = 1e-2
         self.R = np.diag(np.repeat(accelerometer_noise, 3))
 
@@ -132,7 +132,6 @@ class Filter:
 
         # update state covariance matrix (currently no noise w so W is just the identity matrix)
         # P = APA.T + WQW.T
-
         self.P = A @ self.P @ A.T + self.Q
 
     def correction_step(self, u_g, u_a):
