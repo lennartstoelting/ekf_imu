@@ -6,7 +6,8 @@ from scipy import constants
 
 from ekf_class import Filter
 
-input_file_name = "test_data/imu_test3.csv"
+# input_file_name = "test_data/imu_test3.csv"
+input_file_name = "static_test.csv"
 columns_to_drop = [
     "recording id",
     "roll [deg]",
@@ -19,6 +20,7 @@ columns_to_drop = [
 ]
 
 output_file_name = "states_over_time_v2.csv"
+output_plot_name = "IMU euler angles.png"
 save_states_to_csv = True
 plot_states = True
 
@@ -111,6 +113,7 @@ def _plot_states():
     plt.title("Yaw, Pitch, Roll")
     plt.legend()
     plt.grid(True)
+    # plt.savefig(output_plot_name)
     plt.show()
 
 

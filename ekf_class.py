@@ -182,13 +182,6 @@ class Filter:
         self.P = (np.eye(10) - kalman_gain @ H) @ self.P
         return
 
-    def process_step(self, gyro, accel, previous_time_ns, current_time_ns):
-
-        if True:  # save_to_csv:
-            self.states_history.append(self.x.copy())
-
-        return
-
     def save_states_to_csv(self, filename):
         if not self.states_history:
             print("No states to save.")
