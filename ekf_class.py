@@ -21,6 +21,7 @@ class Filter:
         self.R = None
 
         self.states_history = []
+        self.helper_counter = 1
 
     def calibration_step(self, accel, u_g):
         self.accel_calibration_buffer.append(accel)
@@ -40,6 +41,9 @@ class Filter:
         self.accel_calibration_buffer = []
         self.gyro_calibration_buffer = []
         self.is_calibrated = True
+
+        print("---")
+        print("Calibration finished")
 
     def _initialize_state_x(self):
         accel_array = np.array(self.accel_calibration_buffer)
@@ -66,7 +70,7 @@ class Filter:
 
     def _initialize_state_covariance_matrix_P(self):
         # decent certainty for the orientation at the start, high certainty (even smaller number) for the velocity and position
-        orientation_certainty = 0.1
+        orientation_certainty = 1e-5
         vel_pos_certainty = 1e-6  # Almost fully confident in the velocity and position since I define them at the start as ground truth
         gyro_bias_certainty = 1e-3
         state_certainty = np.concatenate(
@@ -137,14 +141,17 @@ class Filter:
     def correction_step(self, u_g, u_a):
         H = ekf_funcs["H"](*self.x[0:4], constants.g)
 
+        if self.helper_counter < 5:
+            f = np.vectorize(lambda x: "%.2f" % (10 * x))
+            print(f(self.P))
+            print("")
+            self.helper_counter += 1
+
         # K = PH(HPH.T + VRV.T)^(-1)
         # change R if the IMU is static
         accel_is_static = np.absolute(np.linalg.norm(u_a) - constants.g) < 0.1
         gyro_is_static = np.linalg.norm(u_g) < 0.1
-        if accel_is_static and gyro_is_static:
-            R = self.R
-        else:
-            R = np.eye(3) * 1e5
+        R = self.R if (accel_is_static and gyro_is_static) else np.eye(3) * 1e5
 
         kalman_gain = self.P @ H.T @ np.linalg.inv(H @ self.P @ H.T + R)
 

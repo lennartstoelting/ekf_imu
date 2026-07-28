@@ -3,10 +3,12 @@ import numpy as np
 
 input_file_name = "test_data/imu_test3.csv"
 
-output_file_name = "static_test.csv"
+output_file_name = "static_test_medium.csv"
 
-static_window_length_in_s = 9
-repetitions = 3
+static_window_length_in_s = (
+    6  # max should be below 10 because thats where the real recording starts shaking
+)
+repetitions = 2
 
 
 def main():

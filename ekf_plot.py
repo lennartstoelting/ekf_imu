@@ -4,7 +4,7 @@ import matplotlib.pyplot as plt
 from scipy.spatial.transform import Rotation
 
 
-def pyplot_states(output_file_name, output_plot_name):
+def pyplot_euler(output_file_name, output_plot_name):
     df = pd.read_csv(output_file_name)
 
     time = df["time"].values
@@ -27,6 +27,29 @@ def pyplot_states(output_file_name, output_plot_name):
     plt.xlabel("Time (s)")
     plt.ylabel("Angle (degrees)")
     plt.title("Yaw, Pitch, Roll")
+    plt.legend()
+    plt.grid(True)
+    # plt.savefig(output_plot_name)
+    plt.show()
+
+
+def pyplot_quaternions(output_file_name, output_plot_name):
+    df = pd.read_csv(output_file_name)
+
+    time = df["time"].values
+
+    quaternions = df[["qx", "qy", "qz", "qw"]].values
+    print("---")
+    print(f"Plotting quaternion values from {output_file_name}")
+
+    plt.figure(figsize=(10, 6))
+    plt.plot(time, df["qx"], label="qx", color="blue")
+    plt.plot(time, df["qy"], label="qy", color="orange")
+    plt.plot(time, df["qz"], label="qz", color="green")
+    plt.plot(time, df["qw"], label="qw", color="black")
+    plt.xlabel("Time (s)")
+    plt.ylabel("quat value")
+    plt.title("Quaternion values")
     plt.legend()
     plt.grid(True)
     # plt.savefig(output_plot_name)
