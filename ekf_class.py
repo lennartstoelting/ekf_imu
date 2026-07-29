@@ -21,7 +21,6 @@ class Filter:
         self.R = None
 
         self.states_history = []
-        self.helper_counter = 1
 
     def calibration_step(self, accel, u_g):
         self.accel_calibration_buffer.append(accel)
@@ -141,24 +140,16 @@ class Filter:
     def correction_step(self, u_g, u_a):
         H = ekf_funcs["H"](*self.x[0:4], constants.g)
 
-        if self.helper_counter < 5:
-            f = np.vectorize(lambda x: "%.2f" % (10 * x))
-            print(f(self.P))
-            print("")
-            self.helper_counter += 1
-
         # K = PH(HPH.T + VRV.T)^(-1)
         # change R if the IMU is static
         accel_is_static = np.absolute(np.linalg.norm(u_a) - constants.g) < 0.1
-        gyro_is_static = np.linalg.norm(u_g) < 0.1
+        gyro_is_static = np.linalg.norm(u_g - self.x[10:13]) < 0.1
         R = self.R if (accel_is_static and gyro_is_static) else np.eye(3) * 1e5
 
         kalman_gain = self.P @ H.T @ np.linalg.inv(H @ self.P @ H.T + R)
 
         # x = x + K(y - h(x, v))
-        h = ekf_funcs["h"](
-            self.x[0], self.x[1], self.x[2], self.x[3], constants.g
-        ).flatten()
+        h = ekf_funcs["h"](*self.x[0:4], constants.g).flatten()
         self.x = self.x + kalman_gain @ (u_a - h)
 
         self.x[0:4] = self._normalize_quat(self.x[0:4])

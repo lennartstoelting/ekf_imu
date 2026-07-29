@@ -6,7 +6,9 @@ from ekf_class import Filter
 from ekf_plot import *
 
 # input_file_name = "test_data/imu_test3.csv"
-input_file_name = "static_test_medium.csv"
+# input_file_name = "static_test_short.csv"
+# input_file_name = "static_test_medium.csv"
+input_file_name = "static_test_long.csv"
 columns_to_drop = [
     "recording id",
     "roll [deg]",
@@ -35,7 +37,7 @@ def main():
 
         # Initialize filter class instance
         # at ca. 100 Hz, 500 rows corresponds to 5 seconds of calibration
-        ekf = Filter(sample_amount_for_calibration=100)
+        ekf = Filter(sample_amount_for_calibration=200)
 
         for index, row in imu_data.iterrows():
 
@@ -66,6 +68,15 @@ def main():
             ekf.prediction_step(u_g, u_a, delta_t)
             ekf.correction_step(u_g, u_a)
             # ---
+
+            # debugging
+            f = np.vectorize(lambda x: "%.3f" % x)
+            if index < 1600 and index % 100 == 0:
+                print(f"state at IMU measurement nr. {index}:")
+                print(f"orientation: {f(ekf.x[0:4])}")
+                print(f"velocity:    {f(ekf.x[4:7])}")
+                print(f"position:    {f(ekf.x[7:10])}")
+                print(f"gyro bias:   {f(ekf.x[10:13])}")
 
             # end of cycle
             ekf.states_history.append(np.append(ekf.x.copy(), elapsed_time))

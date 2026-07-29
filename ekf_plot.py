@@ -3,6 +3,9 @@ import numpy as np
 import matplotlib.pyplot as plt
 from scipy.spatial.transform import Rotation
 
+# to create a plot grid:
+# https://matplotlib.org/stable/gallery/subplots_axes_and_figures/subplots_demo.html
+
 
 def pyplot_euler(output_file_name, output_plot_name):
     df = pd.read_csv(output_file_name)
@@ -20,7 +23,7 @@ def pyplot_euler(output_file_name, output_plot_name):
     print("---")
     print(f"Plotting pitch, yaw and roll from {output_file_name}")
 
-    plt.figure(figsize=(10, 6))
+    plt.figure(figsize=(15, 9))
     plt.plot(time, df["roll"], label="Roll", color="blue")
     plt.plot(time, df["pitch"], label="Pitch", color="orange")
     plt.plot(time, df["yaw"], label="Yaw", color="green")
@@ -42,7 +45,7 @@ def pyplot_quaternions(output_file_name, output_plot_name):
     print("---")
     print(f"Plotting quaternion values from {output_file_name}")
 
-    plt.figure(figsize=(10, 6))
+    plt.figure(figsize=(15, 9))
     plt.plot(time, df["qx"], label="qx", color="blue")
     plt.plot(time, df["qy"], label="qy", color="orange")
     plt.plot(time, df["qz"], label="qz", color="green")
