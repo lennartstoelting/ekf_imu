@@ -37,7 +37,7 @@ def main():
 
         # Initialize filter class instance
         # at ca. 100 Hz, 500 rows corresponds to 5 seconds of calibration
-        ekf = Filter(sample_amount_for_calibration=500)
+        ekf = Filter(sample_amount_for_calibration=300)
 
         for index, row in imu_data.iterrows():
 
@@ -57,9 +57,7 @@ def main():
                 ]
             )
             u_g = gyro * (np.pi / 180.0)
-            u_a = (
-                accel / 1.00656
-            ) * constants.g  # temporary, I want to add it as a vector of accel bias in the ekf class itself and then subtract every time instead of this simple division
+            u_a = (accel - ekf.accel_bias) * constants.g
             # ---
 
             # run each sample

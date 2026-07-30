@@ -15,6 +15,8 @@ class Filter:
         self.accel_calibration_buffer = []
         self.gyro_calibration_buffer = []
 
+        self.accel_bias = np.zeros(3)
+
         self.x = None
         self.P = None
         self.Q = None
@@ -45,21 +47,20 @@ class Filter:
         print("Calibration finished")
 
     def _initialize_state_x(self):
-        accel_array = np.array(self.accel_calibration_buffer)
-        avg_accel = np.mean(accel_array, axis=0)
-
-        print(f"all acceleromter readings from calibration phase averaged: {avg_accel}")
-
         gyro_array = np.array(self.gyro_calibration_buffer)
         avg_gyro = np.mean(gyro_array, axis=0)
 
-        measured_gravity = avg_accel / np.linalg.norm(avg_accel)
-        global_gravity = np.array([0.0, 0.0, 1.0])
+        accel_array = np.array(self.accel_calibration_buffer)
+        avg_accel = np.mean(accel_array, axis=0)
 
-        qw = 1.0 + np.dot(measured_gravity, global_gravity)
-        qx, qy, qz = np.cross(measured_gravity, global_gravity)
+        local_gravity_direction = self._normalize_vec(avg_accel)
+        self.accel_bias = avg_accel - local_gravity_direction
 
-        q_initial = self._normalize_quat(np.array([qw, qx, qy, qz]))
+        global_gravity_direction = np.array([0.0, 0.0, 1.0])
+        qw = 1.0 + np.dot(local_gravity_direction, global_gravity_direction)
+        qx, qy, qz = np.cross(local_gravity_direction, global_gravity_direction)
+
+        q_initial = self._normalize_vec(np.array([qw, qx, qy, qz]))
 
         self.x = np.array(
             [
@@ -72,7 +73,7 @@ class Filter:
     def _initialize_state_covariance_matrix_P(self):
         # decent certainty for the orientation at the start, high certainty (even smaller number) for the velocity and position
         orientation_certainty = 1e-5
-        vel_pos_certainty = 1e-6  # Almost fully confident in the velocity and position since I define them at the start as ground truth
+        vel_pos_certainty = 1e-10  # Almost fully confident in the velocity and position since I define them at the start as ground truth
         gyro_bias_certainty = 1e-7
         state_certainty = np.concatenate(
             (
@@ -109,10 +110,6 @@ class Filter:
             *u_g,
             dt,
         ).flatten()
-
-        # update orientation
-        self.x[0:4] = self._normalize_quat(f_q)
-
         f_a = ekf_funcs["f_a"](
             *self.x[0:4],
             *u_a,
@@ -125,6 +122,9 @@ class Filter:
             dt,
             constants.g,
         )
+
+        # update orientation
+        self.x[0:4] = self._normalize_vec(f_q)
 
         # update position and velocity
         v_current = self.x[4:7]
@@ -155,7 +155,7 @@ class Filter:
         h = ekf_funcs["h"](*self.x[0:4], constants.g).flatten()
         self.x = self.x + kalman_gain @ (u_a - h)
 
-        self.x[0:4] = self._normalize_quat(self.x[0:4])
+        self.x[0:4] = self._normalize_vec(self.x[0:4])
 
         # P = (I - KH)P
         self.P = (np.eye(13) - kalman_gain @ H) @ self.P
@@ -189,5 +189,5 @@ class Filter:
         return
 
     @staticmethod
-    def _normalize_quat(q):
+    def _normalize_vec(q):
         return q / np.linalg.norm(q)
