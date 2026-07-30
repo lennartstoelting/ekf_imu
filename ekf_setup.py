@@ -37,7 +37,7 @@ def main():
 
         # Initialize filter class instance
         # at ca. 100 Hz, 500 rows corresponds to 5 seconds of calibration
-        ekf = Filter(sample_amount_for_calibration=200)
+        ekf = Filter(sample_amount_for_calibration=500)
 
         for index, row in imu_data.iterrows():
 
@@ -57,7 +57,9 @@ def main():
                 ]
             )
             u_g = gyro * (np.pi / 180.0)
-            u_a = accel * constants.g
+            u_a = (
+                accel / 1.00656
+            ) * constants.g  # temporary, I want to add it as a vector of accel bias in the ekf class itself and then subtract every time instead of this simple division
             # ---
 
             # run each sample
@@ -70,13 +72,14 @@ def main():
             # ---
 
             # debugging
-            f = np.vectorize(lambda x: "%.3f" % x)
-            if index < 1600 and index % 100 == 0:
-                print(f"state at IMU measurement nr. {index}:")
-                print(f"orientation: {f(ekf.x[0:4])}")
-                print(f"velocity:    {f(ekf.x[4:7])}")
-                print(f"position:    {f(ekf.x[7:10])}")
-                print(f"gyro bias:   {f(ekf.x[10:13])}")
+            # f = np.vectorize(lambda x: "%.4f" % x)
+            # if index < 220:  # and index % 100 == 0:
+            #     print(f"state at IMU measurement nr. {index}:")
+            #     # print(f"orientation: {f(ekf.x[0:4])}")
+            #     print(f"accelerometer: {f(u_a)}")
+            #     print(f"velocity:    {f(ekf.x[4:7])}")
+            #     # print(f"position:    {f(ekf.x[7:10])}")
+            #     # print(f"gyro bias:   {f(ekf.x[10:13])}")
 
             # end of cycle
             ekf.states_history.append(np.append(ekf.x.copy(), elapsed_time))
@@ -87,8 +90,9 @@ def main():
         if save_states_to_csv:
             ekf.save_states_to_csv(output_file_name)
             if plot_states:
-                pyplot_euler(output_file_name, output_plot_name)
+                # pyplot_euler(output_file_name, output_plot_name)
                 # pyplot_quaternions(output_file_name, output_plot_name)
+                pyplot_grid(output_file_name, output_plot_name)
 
         print("---")
 

@@ -48,6 +48,8 @@ class Filter:
         accel_array = np.array(self.accel_calibration_buffer)
         avg_accel = np.mean(accel_array, axis=0)
 
+        print(f"all acceleromter readings from calibration phase averaged: {avg_accel}")
+
         gyro_array = np.array(self.gyro_calibration_buffer)
         avg_gyro = np.mean(gyro_array, axis=0)
 
@@ -71,7 +73,7 @@ class Filter:
         # decent certainty for the orientation at the start, high certainty (even smaller number) for the velocity and position
         orientation_certainty = 1e-5
         vel_pos_certainty = 1e-6  # Almost fully confident in the velocity and position since I define them at the start as ground truth
-        gyro_bias_certainty = 1e-3
+        gyro_bias_certainty = 1e-7
         state_certainty = np.concatenate(
             (
                 np.repeat(orientation_certainty, 4),
@@ -107,6 +109,10 @@ class Filter:
             *u_g,
             dt,
         ).flatten()
+
+        # update orientation
+        self.x[0:4] = self._normalize_quat(f_q)
+
         f_a = ekf_funcs["f_a"](
             *self.x[0:4],
             *u_a,
@@ -119,9 +125,6 @@ class Filter:
             dt,
             constants.g,
         )
-
-        # update orientation
-        self.x[0:4] = self._normalize_quat(f_q)
 
         # update position and velocity
         v_current = self.x[4:7]
